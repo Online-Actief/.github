@@ -1,7 +1,7 @@
-# Claude bekijkt elke pull request en zet opmerkingen bij de regels waar iets mis is.
-# Opnieuw laten kijken of iets vragen: begin een reactie in de pull request met "@claude".
+# Online Actief Bot bekijkt elke pull request en zet opmerkingen bij de regels waar iets mis is.
+# Opnieuw laten kijken of iets vragen: begin een reactie in de pull request met "@oa-bot".
 #
-# Claude mag alleen lezen en reageren. Hij kan geen code wijzigen, niets samenvoegen
+# De bot mag alleen lezen en reageren. Hij kan geen code wijzigen, niets samenvoegen
 # en niets goedkeuren. Een review vervangt de controle door een developer niet.
 #
 # Nodig: organisatiegeheimen CLAUDE_CODE_OAUTH_TOKEN (aanmaken met `claude setup-token`),
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   review:
-    name: Claude-review
+    name: Review
     if: >-
       github.event_name == 'pull_request'
       && !github.event.pull_request.draft
@@ -99,7 +99,7 @@ jobs:
             Zet onder de tabel in de samenvatting precies deze regel, met de gekozen labels letterlijk zoals hierboven:
             `**Labels:** prio: hoog, risico: middel, fout`
 
-            Sluit af met een regel in klein lettertype: `<sub>Automatische review. Een developer beslist. Opnieuw laten kijken: reageer met @claude.</sub>`
+            Sluit af met een regel in klein lettertype: `<sub>Automatische review. Een developer beslist. Opnieuw laten kijken: reageer met @oa-bot.</sub>`
 
             Schrijf in gewoon Nederlands, kort en direct, zonder gedachtestreepjes.
 
@@ -196,12 +196,12 @@ jobs:
           echo "Mail verstuurd naar $NAAR: $onderwerp"
 
   vraag:
-    name: Claude beantwoordt een vraag
+    name: Vraag aan de bot
     if: >-
       (github.event_name == 'issue_comment' && github.event.issue.pull_request
-        && startsWith(github.event.comment.body, '@claude'))
+        && startsWith(github.event.comment.body, '@oa-bot'))
       || (github.event_name == 'pull_request_review_comment'
-        && startsWith(github.event.comment.body, '@claude'))
+        && startsWith(github.event.comment.body, '@oa-bot'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -225,6 +225,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ steps.bot.outputs.token }}
+          trigger_phrase: "@oa-bot"
           claude_args: >-
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
-            --append-system-prompt "Antwoord in gewoon Nederlands, kort en direct, zonder gedachtestreepjes. Je mag alleen lezen en reageren, geen code wijzigen. Vraagt iemand om een nieuwe review, gebruik dan de niveaus 🔴 Blokkerend, 🟠 Belangrijk en 🟡 Klein."
+            --append-system-prompt "Je bent Online Actief Bot. Noem jezelf nooit Claude en zet geen handtekening of verwijzing naar een AI-dienst onder je antwoord. Antwoord in gewoon Nederlands, kort en direct, zonder gedachtestreepjes. Je mag alleen lezen en reageren, geen code wijzigen. Vraagt iemand om een nieuwe review, gebruik dan de niveaus 🔴 Blokkerend, 🟠 Belangrijk en 🟡 Klein."

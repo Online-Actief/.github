@@ -88,9 +88,9 @@ Staat er toch een geheim in een commit? Meld het meteen bij Vincent. Alleen verw
 | Tests | draait de tests van het project (Node, Python of PHP) en controleert de syntax |
 | Codekwaliteit | ruff (Python), shellcheck (scripts) en hadolint (Dockerfile) zoeken echte fouten |
 | Beveiliging | pip-audit en osv-scanner zoeken packages met bekende lekken, semgrep zoekt onveilige code |
-| Claude-review | leest de wijziging en zet opmerkingen bij de regels, ingedeeld in Blokkerend, Belangrijk en Klein |
+| Review | Online Actief Bot leest de wijziging en zet opmerkingen bij de regels, ingedeeld in Blokkerend, Belangrijk en Klein |
 
-De eerste vier moeten groen zijn voordat iets naar `main` kan. De review van Claude is een hulp en vervangt de controle door een developer niet. Opnieuw laten kijken of iets vragen: begin een reactie in de pull request met `@claude`.
+De eerste vier moeten groen zijn voordat iets naar `main` kan. De review van de bot is een hulp en vervangt de controle door een developer niet. Opnieuw laten kijken of iets vragen: begin een reactie in de pull request met `@oa-bot`.
 
 Is een melding vals? Zet het niet zomaar uit, maar leg in de pull request uit waarom, dan beslist de reviewer.
 
