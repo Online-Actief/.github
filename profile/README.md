@@ -59,10 +59,6 @@ Online marketingbureau uit Oldenzaal. Marketeers, designers en developers onder 
 
 Meer in de [werkwijze](https://github.com/Online-Actief/.github/blob/main/CONTRIBUTING.md).
 
-## Stage
-
-Online Actief is erkend leerbedrijf voor **Software developer (mbo 4)**. Interesse in een stage? Mail [vincent@online-actief.nl](mailto:vincent@online-actief.nl).
-
 ## Contact
 
 <table>
