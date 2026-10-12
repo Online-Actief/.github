@@ -89,6 +89,29 @@ Staat er toch een geheim in een commit? Meld het meteen bij Vincent. Alleen verw
 
 Beide moeten groen zijn voordat iets naar `main` kan.
 
+## Review
+
+De reviewer kijkt naar vijf dingen:
+
+1. Doet de wijziging wat in de pull request staat, en niets anders?
+2. Is beschreven hoe het getest is, en klopt dat?
+3. Staan er geen geheimen, data of persoonsgegevens in?
+4. Is de code te lezen voor iemand die het project niet kent?
+5. Is `changelog.md` bijgewerkt?
+
+Opmerkingen los je op in dezelfde branch. Ben je het niet eens met een opmerking, reageer dan in de pull request, dan blijft de afweging bewaard.
+
+## Nieuw project
+
+Alleen owners kunnen repo's maken.
+
+1. Ga naar [github.com/new](https://github.com/new), kies bij Template `Online-Actief/repo-template`, eigenaar `Online-Actief` en zet de repo op **Private**.
+2. Gebruik als naam dezelfde naam als de map op de server, in kleine letters met streepjes, bijvoorbeeld `oa-kluis`.
+3. Draai `beheer/repo-instellen.sh <repo>` uit deze repo. Dat zet samenvoegen, Dependabot, labels, teams en de regels voor `main` goed.
+4. Vul de README in en zet in `.github/dependabot.yml` de regels aan die bij het project horen.
+
+Een bestaand project zonder sjabloon krijgt de controles via het tabblad Actions > New workflow > "Controles van Online Actief".
+
 ## Rechten
 
 | Team | Recht |
@@ -98,3 +121,7 @@ Beide moeten groen zijn voordat iets naar `main` kan.
 | Marketing | schrijven, alles via pull request, bijvoorbeeld voor teksten |
 
 Toegang loopt altijd via een team, nooit per persoon. Bij vertrek wordt iemand uit de organisatie verwijderd, zie procedure OA-ISMS-04.
+
+## Hulp
+
+Zie [SUPPORT.md](SUPPORT.md).

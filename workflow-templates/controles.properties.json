@@ -1,0 +1,6 @@
+{
+  "name": "Controles van Online Actief",
+  "description": "Zoekt naar geheimen in de hele geschiedenis en draait de tests voor Node, Python en PHP.",
+  "iconName": "octicon shield-check",
+  "categories": ["Python", "JavaScript", "PHP"]
+}

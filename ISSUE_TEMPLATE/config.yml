@@ -1,1 +1,8 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Beveiligingsprobleem
+    url: https://github.com/Online-Actief/.github/blob/main/SECURITY.md
+    about: Meld een beveiligingsprobleem niet in een melding, maar per mail.
+  - name: Vraag over de werkwijze
+    url: https://github.com/Online-Actief/.github/blob/main/SUPPORT.md
+    about: Waar je terechtkunt met vragen.

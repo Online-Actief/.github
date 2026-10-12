@@ -1,0 +1,94 @@
+# Draait bij elke pull request en bij elke push naar de standaardbranch.
+# De namen van de jobs ("Geen geheimen" en "Tests") zijn de verplichte controles
+# in beheer/ruleset-main.json van Online-Actief/.github. Hernoem ze niet zonder dat bestand aan te passen.
+name: Controles
+
+on:
+  pull_request:
+  push:
+    branches: [$default-branch]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  geheimen:
+    name: Geen geheimen
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: gitleaks installeren
+        run: |
+          bestand="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$bestand" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${bestand}"
+          echo "${GITLEAKS_SHA256}  ${bestand}" | sha256sum -c -
+          tar -xzf "$bestand" gitleaks
+
+      - name: Hele geschiedenis scannen
+        run: ./gitleaks git --redact --verbose --exit-code 1 .
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Node: draait `npm test` als package.json een test-script heeft.
+      - if: hashFiles('package.json') != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+      - if: hashFiles('package.json') != ''
+        name: Node-tests
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm test --if-present
+
+      # Python: draait pytest als er een map tests/ is.
+      - if: hashFiles('requirements.txt', 'pyproject.toml') != ''
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - if: hashFiles('requirements.txt', 'pyproject.toml') != ''
+        name: Python-tests
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ] && grep -q '^\[build-system\]' pyproject.toml; then pip install -e .; fi
+          if [ -d tests ]; then
+            pip install pytest
+            python -m pytest
+          else
+            echo "Geen map tests/, alleen controleren of alle Python-bestanden compileren."
+            python -m compileall -q -x '(^|/)(\.venv|venv|node_modules)/' .
+          fi
+
+      # PHP: controleert de syntax van elk bestand en draait `composer test` als dat script bestaat.
+      - if: hashFiles('composer.json', '**/*.php') != ''
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          tools: composer
+      - if: hashFiles('composer.json', '**/*.php') != ''
+        name: PHP-controles
+        run: |
+          find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+          if [ -f composer.json ]; then
+            composer install --no-interaction --no-progress
+            if composer run-script --list | grep -qE '^\s*test\b'; then composer test; fi
+          fi
