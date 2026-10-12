@@ -119,7 +119,7 @@ jobs:
             esac
           }
           samenvatting=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
-            --jq '[.[] | select(.body | contains("Review van Online Actief Bot"))] | last | .body // ""')
+            --jq '[.[] | select(.user.login == "online-actief-bot[bot]" and (.body | contains("Review van Online Actief Bot")))] | last | .body // ""')
           regel=$(printf '%s\n' "$samenvatting" | grep -m1 '^\*\*Labels:\*\*' || true)
           if [ -z "$regel" ]; then echo "Geen labels in de samenvatting gevonden."; exit 0; fi
           IFS=',' read -ra gekozen <<< "${regel#'**Labels:** '}"
@@ -150,7 +150,7 @@ jobs:
         run: |
           if [ -z "$RESEND_API_KEY" ]; then echo "Geen RESEND_API_KEY, dus geen mail."; exit 0; fi
           samenvatting=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
-            --jq '[.[] | select(.body | contains("Review van Online Actief Bot"))] | last | .body // ""')
+            --jq '[.[] | select(.user.login == "online-actief-bot[bot]" and (.body | contains("Review van Online Actief Bot")))] | last | .body // ""')
           if [ -z "$samenvatting" ]; then echo "Geen samenvatting, dus geen mail."; exit 0; fi
 
           mapfile -t labels < <(gh pr view "$PR" --json labels --jq '.labels[].name')
