@@ -1,0 +1,22 @@
+name: Wens
+description: Een nieuwe functie of een aanpassing.
+labels: [wens]
+body:
+  - type: textarea
+    id: wat
+    attributes:
+      label: Wat wil je?
+    validations:
+      required: true
+  - type: textarea
+    id: waarom
+    attributes:
+      label: Waarom?
+      description: Voor wie is het, en wat levert het op?
+    validations:
+      required: true
+  - type: textarea
+    id: voorbeeld
+    attributes:
+      label: Voorbeeld of schets
+      description: Een link, schermafbeelding of tekening helpt.

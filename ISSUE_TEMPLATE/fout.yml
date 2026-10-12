@@ -1,0 +1,37 @@
+name: Fout melden
+description: Iets werkt niet zoals het hoort.
+labels: [fout]
+body:
+  - type: textarea
+    id: wat
+    attributes:
+      label: Wat gaat er mis?
+      description: Wat zag je, en wat had je verwacht?
+    validations:
+      required: true
+  - type: textarea
+    id: stappen
+    attributes:
+      label: Hoe krijg je het te zien?
+      description: De stappen om het na te doen, met de pagina of het adres.
+      placeholder: |
+        1. Ga naar ...
+        2. Klik op ...
+        3. Zie ...
+    validations:
+      required: true
+  - type: textarea
+    id: bijlagen
+    attributes:
+      label: Schermafbeelding of foutmelding
+      description: Sleep een afbeelding hierheen. Geen wachtwoorden of persoonsgegevens.
+  - type: dropdown
+    id: haast
+    attributes:
+      label: Hoe dringend?
+      options:
+        - Kan wachten
+        - Deze week
+        - Klant heeft er nu last van
+    validations:
+      required: true
