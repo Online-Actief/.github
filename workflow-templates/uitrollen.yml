@@ -91,18 +91,46 @@ jobs:
           echo "Uitrolverzoek $id staat klaar. De server pakt het binnen een minuut op."
 
       - name: Wachten op de server
+        id: server
         env:
           ID: ${{ steps.verzoek.outputs.id }}
         run: |
           for i in $(seq 1 60); do
-            read -r staat uitleg < <(gh api "repos/$REPO/deployments/$ID/statuses" \
-              --jq '.[0] | "\(.state) \(.description)"')
+            read -r staat uitleg < <(gh api "repos/$REPO/deployments/$ID/statuses"               --jq '.[0] | "\(.state) \(.description)"')
             case "$staat" in
-              success) echo "Live: $uitleg"; exit 0 ;;
-              failure|error|inactive) echo "::error::$uitleg"; exit 1 ;;
+              success) echo "uitleg=$uitleg" >> "$GITHUB_OUTPUT"; echo "✅ $uitleg"; exit 0 ;;
+              failure|error|inactive) echo "uitleg=$uitleg" >> "$GITHUB_OUTPUT"; echo "::error::❌ $uitleg"; exit 1 ;;
             esac
-            echo "$(date +%T) $staat: $uitleg"
+            echo "$(date +%T) ⏳ $staat: $uitleg"
             sleep 10
           done
-          echo "::error::De server heeft na 10 minuten niet gereageerd. Kijk op de server in /var/log/oa-deploy.log."
+          echo "uitleg=De server heeft na 10 minuten niet gereageerd" >> "$GITHUB_OUTPUT"
+          echo "::error::❌ De server heeft na 10 minuten niet gereageerd. Kijk op de server in /var/log/oa-deploy.log."
           exit 1
+
+      - name: Samenvatting
+        if: ${{ always() }}
+        env:
+          SHA: ${{ steps.versie.outputs.sha }}
+          UITLEG: ${{ steps.server.outputs.uitleg }}
+          UITKOMST: ${{ steps.server.outcome }}
+          WIE: ${{ github.triggering_actor }}
+        run: |
+          case "$UITKOMST" in
+            success) icoon="✅"; tekst="Live" ;;
+            failure) icoon="❌"; tekst="Niet gelukt" ;;
+            *)       icoon="⛔"; tekst="Niet uitgerold, zie de stappen hierboven" ;;
+          esac
+          {
+            echo "## 🚀 Uitrollen naar productie"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Resultaat** | $icoon $tekst |"
+            echo "| **Project** | \`$REPO\` |"
+            [ -n "$SHA" ] && echo "| **Versie** | [\`${SHA:0:7}\`]($GITHUB_SERVER_URL/$REPO/commit/$SHA) |"
+            echo "| **Door** | @$WIE |"
+            [ -n "$UITLEG" ] && echo "| **Server** | $UITLEG |"
+            echo
+            echo "<sub>De server zet bij een fout automatisch de vorige versie terug. Overzicht: Deployments in deze repo.</sub>"
+          } >> "$GITHUB_STEP_SUMMARY"

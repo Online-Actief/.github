@@ -4,7 +4,8 @@
 # Claude mag alleen lezen en reageren. Hij kan geen code wijzigen, niets samenvoegen
 # en niets goedkeuren. Een review vervangt de controle door een developer niet.
 #
-# Nodig: organisatiegeheim CLAUDE_CODE_OAUTH_TOKEN (aanmaken met `claude setup-token`).
+# Nodig: organisatiegeheimen CLAUDE_CODE_OAUTH_TOKEN (aanmaken met `claude setup-token`) en
+# OA_BOT_PRIVATE_KEY, en organisatievariabele OA_BOT_APP_ID (Online Actief Bot).
 name: Review
 
 on:
@@ -34,14 +35,26 @@ jobs:
       group: review-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
+      - name: Token van Online Actief Bot
+        id: bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.OA_BOT_APP_ID }}
+          private-key: ${{ secrets.OA_BOT_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+          permission-issues: write
+          permission-actions: read
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          token: ${{ steps.bot.outputs.token }}
 
       - uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ github.token }}
+          github_token: ${{ steps.bot.outputs.token }}
           claude_args: >-
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
           prompt: |
@@ -58,7 +71,7 @@ jobs:
 
             Regels voor je opmerkingen:
             - Plaats per probleem één opmerking op de regel zelf, met mcp__github_inline_comment__create_inline_comment.
-            - Begin elke opmerking met het niveau, vetgedrukt: **Blokkerend** (moet opgelost voor samenvoegen), **Belangrijk** (beter nu oplossen) of **Klein** (mag later).
+            - Begin elke opmerking met het niveau: `🔴 **Blokkerend**` (moet opgelost voor samenvoegen), `🟠 **Belangrijk**` (beter nu oplossen) of `🟡 **Klein**` (mag later).
             - Zeg in één of twee zinnen wat er mis is en wanneer het misgaat. Geef een concrete oplossing, met code als dat helpt.
             - Alleen wat je zeker weet. Twijfel je, zeg dan wat iemand moet controleren in plaats van iets te beweren.
             - Geen opmerkingen over smaak of opmaak. Geen complimenten, geen herhaling van wat de code doet, geen algemene adviezen.
@@ -66,17 +79,19 @@ jobs:
 
             Plaats daarna één samenvatting met `gh pr comment`, in precies deze vorm:
 
-            ### Review
+            ## 🤖 Review van Online Actief Bot
 
-            **Oordeel:** Kan samengevoegd worden, of: Eerst de blokkerende punten oplossen
+            **Oordeel:** ✅ Kan samengevoegd worden, of: ⛔ Eerst de blokkerende punten oplossen
 
-            | Niveau | Aantal |
-            |---|---|
-            | Blokkerend | n |
-            | Belangrijk | n |
-            | Klein | n |
+            | | Niveau | Aantal |
+            |---|---|---|
+            | 🔴 | Blokkerend | n |
+            | 🟠 | Belangrijk | n |
+            | 🟡 | Klein | n |
 
-            Daaronder per niveau een lijst met één regel per punt en het bestand. Laat een niveau zonder punten weg. Is er niets gevonden, schrijf dan alleen "Geen problemen gevonden." onder het oordeel.
+            Daaronder per niveau een kopje (`### 🔴 Blokkerend` enz.) met één regel per punt: wat er mis is en het bestand met regelnummer. Laat een niveau zonder punten weg. Is er niets gevonden, schrijf dan alleen "✅ Geen problemen gevonden." onder het oordeel.
+
+            Sluit af met een regel in klein lettertype: `<sub>Automatische review. Een developer beslist. Opnieuw laten kijken: reageer met @claude.</sub>`
 
             Schrijf in gewoon Nederlands, kort en direct, zonder gedachtestreepjes.
 
@@ -90,14 +105,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Token van Online Actief Bot
+        id: bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.OA_BOT_APP_ID }}
+          private-key: ${{ secrets.OA_BOT_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+          permission-issues: write
+          permission-actions: read
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          token: ${{ steps.bot.outputs.token }}
 
       - uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ github.token }}
+          github_token: ${{ steps.bot.outputs.token }}
           claude_args: >-
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
-            --append-system-prompt "Antwoord in gewoon Nederlands, kort en direct, zonder gedachtestreepjes. Je mag alleen lezen en reageren, geen code wijzigen. Vraagt iemand om een nieuwe review, gebruik dan de niveaus Blokkerend, Belangrijk en Klein."
+            --append-system-prompt "Antwoord in gewoon Nederlands, kort en direct, zonder gedachtestreepjes. Je mag alleen lezen en reageren, geen code wijzigen. Vraagt iemand om een nieuwe review, gebruik dan de niveaus 🔴 Blokkerend, 🟠 Belangrijk en 🟡 Klein."
