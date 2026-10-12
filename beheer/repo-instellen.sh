@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Zet een repo van Online-Actief volgens de afspraken in CONTRIBUTING.md.
-# Gebruik: beheer/repo-instellen.sh <repo>
+# Gebruik: beheer/repo-instellen.sh <repo> [--zonder-regels]
 # Nodig: gh, ingelogd als owner van de organisatie (scope admin:org).
 # Mag vaker gedraaid worden; het resultaat is steeds hetzelfde.
 set -euo pipefail
 
 ORG=Online-Actief
-REPO=${1:?Gebruik: $0 <repo>}
+REPO=${1:?Gebruik: $0 <repo> [--zonder-regels]}
+ZONDER_REGELS=${2:-}
 HIER=$(cd "$(dirname "$0")" && pwd)
 
 echo "== $ORG/$REPO"
@@ -24,14 +25,35 @@ gh api -X PUT "repos/$ORG/$REPO/vulnerability-alerts" --silent
 gh api -X PUT "repos/$ORG/$REPO/automated-security-fixes" --silent
 echo "Dependabot: waarschuwingen en beveiligingsupdates aan"
 
-# Labels die de meldingsformulieren gebruiken.
+# Labelnamen met spaties of dubbele punten in een URL.
+urlnaam() { local n=${1// /%20}; echo "${n//:/%3A}"; }
+
+# Labels voor meldingen, prio, risico en categorie.
 label() {
   gh api -X POST "repos/$ORG/$REPO/labels" -f name="$1" -f color="$2" -f description="$3" --silent 2>/dev/null \
-    || gh api -X PATCH "repos/$ORG/$REPO/labels/$1" -f color="$2" -f description="$3" --silent
+    || gh api -X PATCH "repos/$ORG/$REPO/labels/$(urlnaam "$1")" -f color="$2" -f description="$3" --silent
 }
+# Meldingen
 label fout d73a4a "Iets werkt niet zoals het hoort"
 label wens 0e8a16 "Nieuwe functie of aanpassing"
-echo "labels: fout, wens"
+# Prio en risico, gezet door Online Actief Bot bij elke review
+label "prio: hoog" d73a4a "Snel bekijken: blokkerende punten of een beveiligingsfix"
+label "prio: middel" fb8c00 "Normaal tempo"
+label "prio: laag" 2da44e "Kan wachten"
+label "risico: hoog" b60205 "Raakt login, rechten, data, database of uitrol"
+label "risico: middel" e99695 "Raakt de werking van de app"
+label "risico: laag" c2e0c6 "Tekst, documentatie, tests of opmaak"
+# Categorie
+label functie 1f6feb "Nieuwe functie of uitbreiding"
+label beveiliging 8250df "Beveiliging"
+label onderhoud 6e7781 "Updates, opruimen, instellingen"
+label documentatie 0075ca "README, uitleg, changelog"
+label tests bfd4f2 "Tests toevoegen of verbeteren"
+# De Engelse standaardlabels van GitHub zijn dubbel met bovenstaande, die gaan weg.
+for oud in accessibility bug documentation duplicate enhancement "good first issue" "help wanted" invalid question wontfix; do
+  gh api -X DELETE "repos/$ORG/$REPO/labels/$(urlnaam "$oud")" --silent 2>/dev/null || true
+done
+echo "labels: meldingen, prio, risico en categorie"
 
 # Toegang via teams.
 team() {
@@ -43,6 +65,8 @@ team stagiairs-development push
 team marketing push
 
 # Regels voor main. Op privé-repo's alleen mogelijk met GitHub Team.
+# Met --zonder-regels blijven de huidige regels staan, bijvoorbeeld als er nog PR's open staan.
+if [ "$ZONDER_REGELS" = "--zonder-regels" ]; then echo "regels voor main: niet aangepast"; exit 0; fi
 # Bij een fout geeft gh de foutmelding op stdout, dus alleen een geslaagde aanroep telt.
 if ! bestaand=$(gh api "repos/$ORG/$REPO/rulesets" --jq '.[] | select(.name=="main beschermen") | .id' 2>/dev/null); then
   bestaand=""

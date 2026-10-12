@@ -4,8 +4,8 @@
 # Claude mag alleen lezen en reageren. Hij kan geen code wijzigen, niets samenvoegen
 # en niets goedkeuren. Een review vervangt de controle door een developer niet.
 #
-# Nodig: organisatiegeheimen CLAUDE_CODE_OAUTH_TOKEN (aanmaken met `claude setup-token`) en
-# OA_BOT_PRIVATE_KEY, en organisatievariabele OA_BOT_APP_ID (Online Actief Bot).
+# Nodig: organisatiegeheimen CLAUDE_CODE_OAUTH_TOKEN (aanmaken met `claude setup-token`),
+# OA_BOT_PRIVATE_KEY en RESEND_API_KEY, en organisatievariabelen OA_BOT_APP_ID en REVIEW_MAIL.
 name: Review
 
 on:
@@ -91,9 +91,108 @@ jobs:
 
             Daaronder per niveau een kopje (`### 🔴 Blokkerend` enz.) met één regel per punt: wat er mis is en het bestand met regelnummer. Laat een niveau zonder punten weg. Is er niets gevonden, schrijf dan alleen "✅ Geen problemen gevonden." onder het oordeel.
 
+            Kies daarna drie labels, één uit elke groep. Je zet ze niet zelf, een vaste stap na jou doet dat op basis van je samenvatting.
+            - Prio, hoe snel moet een developer kijken: `prio: hoog` (blokkerende punten of een beveiligingsfix), `prio: middel` (gewone wijziging), `prio: laag` (tekst, documentatie, kleine opruiming).
+            - Risico, hoe groot de kans is dat het live iets stukmaakt: `risico: hoog` (login, rechten, versleuteling, data, database, uitrol of server), `risico: middel` (werking van de app), `risico: laag` (tekst, documentatie, tests, opmaak).
+            - Categorie, wat voor wijziging het is: `functie`, `fout`, `beveiliging`, `onderhoud`, `documentatie` of `tests`. Kies de belangrijkste.
+
+            Zet onder de tabel in de samenvatting precies deze regel, met de gekozen labels letterlijk zoals hierboven:
+            `**Labels:** prio: hoog, risico: middel, fout`
+
             Sluit af met een regel in klein lettertype: `<sub>Automatische review. Een developer beslist. Opnieuw laten kijken: reageer met @claude.</sub>`
 
             Schrijf in gewoon Nederlands, kort en direct, zonder gedachtestreepjes.
+
+      # Zet de labels uit de samenvatting op de pull request. Alleen labels uit de vaste lijst,
+      # zodat de review zelf geen andere wijzigingen aan de pull request kan doen.
+      - name: Labels zetten
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          mag() {
+            case "$1" in
+              "prio: hoog"|"prio: middel"|"prio: laag"|"risico: hoog"|"risico: middel"|"risico: laag") return 0 ;;
+              functie|fout|beveiliging|onderhoud|documentatie|tests) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          samenvatting=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq '[.[] | select(.body | contains("Review van Online Actief Bot"))] | last | .body // ""')
+          regel=$(printf '%s\n' "$samenvatting" | grep -m1 '^\*\*Labels:\*\*' || true)
+          if [ -z "$regel" ]; then echo "Geen labels in de samenvatting gevonden."; exit 0; fi
+          IFS=',' read -ra gekozen <<< "${regel#'**Labels:** '}"
+          nieuw=()
+          for l in "${gekozen[@]}"; do
+            l=$(echo "$l" | xargs)
+            if mag "$l"; then nieuw+=("$l"); else echo "Overgeslagen: $l"; fi
+          done
+          [ "${#nieuw[@]}" -gt 0 ] || exit 0
+          # Oude labels uit dezelfde groepen eraf, nieuwe erop.
+          mapfile -t huidig < <(gh pr view "$PR" --json labels --jq '.labels[].name')
+          for l in "${huidig[@]}"; do
+            if mag "$l"; then gh pr edit "$PR" --remove-label "$l" >/dev/null; fi
+          done
+          for l in "${nieuw[@]}"; do gh pr edit "$PR" --add-label "$l" >/dev/null; echo "Label: $l"; done
+
+      # Mail de uitkomst naar de reviewer, met prio, risico en categorie in het onderwerp.
+      - name: Mail naar de reviewer
+        if: ${{ !cancelled() && vars.REVIEW_MAIL != '' }}
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          PR: ${{ github.event.pull_request.number }}
+          TITEL: ${{ github.event.pull_request.title }}
+          AUTEUR: ${{ github.event.pull_request.user.login }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          NAAR: ${{ vars.REVIEW_MAIL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          if [ -z "$RESEND_API_KEY" ]; then echo "Geen RESEND_API_KEY, dus geen mail."; exit 0; fi
+          samenvatting=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq '[.[] | select(.body | contains("Review van Online Actief Bot"))] | last | .body // ""')
+          if [ -z "$samenvatting" ]; then echo "Geen samenvatting, dus geen mail."; exit 0; fi
+
+          mapfile -t labels < <(gh pr view "$PR" --json labels --jq '.labels[].name')
+          prio=""; risico=""; soort=""
+          for l in "${labels[@]}"; do
+            case "$l" in
+              "prio: "*) prio=${l#prio: } ;;
+              "risico: "*) risico=${l#risico: } ;;
+              functie|fout|beveiliging|onderhoud|documentatie|tests) soort=$l ;;
+            esac
+          done
+          case "$prio" in hoog) icoon="🔴" ;; middel) icoon="🟠" ;; laag) icoon="🟢" ;; *) icoon="⚪" ;; esac
+          repo=${GITHUB_REPOSITORY#*/}
+          onderwerp="[$icoon Prio ${prio:-?} | Risico ${risico:-?} | ${soort^}] $repo #$PR: $TITEL"
+
+          inhoud=$(jq -n --arg t "$samenvatting" --arg c "$GITHUB_REPOSITORY" '{text: $t, mode: "gfm", context: $c}' \
+            | gh api -X POST markdown --input -)
+
+          jq -n --arg van "Online Actief Bot <notificaties@mail.online-actief.nl>" --arg naar "$NAAR" \
+            --arg onderwerp "$onderwerp" --arg inhoud "$inhoud" --arg titel "$TITEL" --arg auteur "$AUTEUR" \
+            --arg url "$PR_URL" --arg repo "$repo" --arg nr "$PR" --arg tekst "$samenvatting" \
+            --arg prio "${prio:-?}" --arg risico "${risico:-?}" --arg soort "${soort:-?}" '
+            def kader($k; $w): "<span style=\"display:inline-block;padding:3px 10px;margin-right:6px;border-radius:12px;background:\($k);color:#fff;font-size:13px\">\($w)</span>";
+            def kleur($w): if $w == "hoog" then "#d73a4a" elif $w == "middel" then "#fb8c00" elif $w == "laag" then "#2da44e" else "#6e7781" end;
+            {
+              from: $van, to: [$naar], subject: $onderwerp,
+              text: "\($repo) #\($nr): \($titel)\nDoor \($auteur)\nPrio \($prio), risico \($risico), \($soort)\n\n\($tekst)\n\n\($url)",
+              html: ("<div style=\"font-family:Arial,sans-serif;max-width:680px;margin:auto;color:#1b1f23\">"
+                + "<div style=\"background:#40AE49;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0\"><b>Online Actief Bot</b></div>"
+                + "<div style=\"border:1px solid #d0d7de;border-top:0;padding:20px;border-radius:0 0 8px 8px\">"
+                + "<div style=\"color:#57606a;font-size:13px\">\($repo | @html) #\($nr) door \($auteur | @html)</div>"
+                + "<h2 style=\"margin:6px 0 12px\">\($titel | @html)</h2>"
+                + "<p>" + kader(kleur($prio); "Prio \($prio)") + kader(kleur($risico); "Risico \($risico)") + kader("#1f6feb"; $soort) + "</p>"
+                + $inhoud
+                + "<p style=\"margin-top:20px\"><a href=\"\($url)\" style=\"background:#1b1f23;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none\">Bekijk de pull request</a></p>"
+                + "</div></div>")
+            }' > mail.json
+          code=$(curl -s -o antwoord.json -w '%{http_code}' https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" --data @mail.json)
+          rm -f mail.json
+          if [ "$code" -ge 300 ]; then echo "::warning::Mail niet verstuurd (HTTP $code)"; cat antwoord.json; exit 0; fi
+          echo "Mail verstuurd naar $NAAR: $onderwerp"
 
   vraag:
     name: Claude beantwoordt een vraag
