@@ -43,7 +43,10 @@ team stagiairs-development push
 team marketing push
 
 # Regels voor main. Op privé-repo's alleen mogelijk met GitHub Team.
-bestaand=$(gh api "repos/$ORG/$REPO/rulesets" --jq '.[] | select(.name=="main beschermen") | .id' 2>/dev/null || true)
+# Bij een fout geeft gh de foutmelding op stdout, dus alleen een geslaagde aanroep telt.
+if ! bestaand=$(gh api "repos/$ORG/$REPO/rulesets" --jq '.[] | select(.name=="main beschermen") | .id' 2>/dev/null); then
+  bestaand=""
+fi
 if [ -n "$bestaand" ]; then
   methode=(-X PUT "repos/$ORG/$REPO/rulesets/$bestaand")
 else
