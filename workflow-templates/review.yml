@@ -5,7 +5,7 @@
 # en niets goedkeuren. Een review vervangt de controle door een developer niet.
 #
 # Nodig: organisatiegeheimen CLAUDE_CODE_OAUTH_TOKEN (aanmaken met `claude setup-token`),
-# OA_BOT_PRIVATE_KEY en RESEND_API_KEY, en organisatievariabelen OA_BOT_APP_ID en REVIEW_MAIL.
+# OA_BOT_PRIVATE_KEY en RESEND_API_KEY, en organisatievariabelen OA_BOT_APP_ID, REVIEW_MAIL en REVIEWER_NAAM.
 name: Review
 
 on:
@@ -99,7 +99,7 @@ jobs:
             Zet onder de tabel in de samenvatting precies deze regel, met de gekozen labels letterlijk zoals hierboven:
             `**Labels:** prio: hoog, risico: middel, fout`
 
-            Sluit af met een regel in klein lettertype: `<sub>Automatische review. Een developer beslist. Opnieuw laten kijken: reageer met @oa-bot.</sub>`
+            Sluit af met precies deze regel: `<sub>Doorgestuurd naar ${{ vars.REVIEWER_NAAM || 'de reviewer' }} ter controle en goedkeuring. Opnieuw laten kijken: reageer met @oa-bot.</sub>`
 
             Schrijf in gewoon Nederlands, kort en direct, zonder gedachtestreepjes.
 
