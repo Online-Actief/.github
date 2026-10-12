@@ -90,7 +90,7 @@ Staat er toch een geheim in een commit? Meld het meteen bij Vincent. Alleen verw
 | Beveiliging | pip-audit en osv-scanner zoeken packages met bekende lekken, semgrep zoekt onveilige code |
 | Claude-review | leest de wijziging en zet opmerkingen bij de regels, ingedeeld in Blokkerend, Belangrijk en Klein |
 
-Alle controles moeten groen zijn voordat iets naar `main` kan. De review van Claude is een hulp en vervangt de controle door een developer niet. Opnieuw laten kijken of iets vragen: begin een reactie in de pull request met `@claude`.
+De eerste vier moeten groen zijn voordat iets naar `main` kan. De review van Claude is een hulp en vervangt de controle door een developer niet. Opnieuw laten kijken of iets vragen: begin een reactie in de pull request met `@claude`.
 
 Is een melding vals? Zet het niet zomaar uit, maar leg in de pull request uit waarom, dan beslist de reviewer.
 

@@ -4,7 +4,9 @@
   "enforcement": "active",
   "conditions": {
     "ref_name": {
-      "include": ["~DEFAULT_BRANCH"],
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
       "exclude": []
     }
   },
@@ -16,8 +18,12 @@
     }
   ],
   "rules": [
-    { "type": "deletion" },
-    { "type": "non_fast_forward" },
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
     {
       "type": "pull_request",
       "parameters": {
@@ -33,8 +39,18 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          { "context": "Geen geheimen" },
-          { "context": "Tests" }
+          {
+            "context": "Geen geheimen"
+          },
+          {
+            "context": "Tests"
+          },
+          {
+            "context": "Codekwaliteit"
+          },
+          {
+            "context": "Beveiliging"
+          }
         ]
       }
     }
