@@ -2,35 +2,46 @@
 # Opnieuw laten kijken of iets vragen: begin een reactie in de pull request met "@oa-bot".
 #
 # De bot mag alleen lezen en reageren. Hij kan geen code wijzigen, niets samenvoegen
-# en niets goedkeuren. Een review vervangt de controle door een developer niet.
+# en niets goedkeuren. Een review vervangt de controle door de reviewer niet.
 #
-# Nodig: organisatiegeheimen CLAUDE_CODE_OAUTH_TOKEN (aanmaken met `claude setup-token`),
-# OA_BOT_PRIVATE_KEY en RESEND_API_KEY, en organisatievariabelen OA_BOT_APP_ID, REVIEW_MAIL en REVIEWER_NAAM.
+# Beveiliging:
+# - De workflow draait altijd zoals hij op main staat (pull_request_target). Een aanpassing aan dit
+#   bestand in een branch heeft dus geen effect tot die is goedgekeurd en samengevoegd.
+# - De code uit de pull request wordt alleen gelezen, nooit uitgevoerd. De actie zet de
+#   Claude-instellingen (.claude/, CLAUDE.md enz.) terug naar die van main.
+# - De geheimen staan in de omgeving "bot" van deze repo, die alleen vanaf main bruikbaar is.
+#   Een workflow uit een branch kan er niet bij.
+#
+# Nodig in de omgeving "bot": CLAUDE_CODE_OAUTH_TOKEN, OA_BOT_PRIVATE_KEY en RESEND_API_KEY.
+# Organisatievariabelen: OA_BOT_APP_ID, REVIEW_MAIL en REVIEWER_NAAM.
 name: Review
 
-on:
-  pull_request:
+# zizmor: pull_request_target is bewust: alleen lezen, geen PR-code uitvoeren, geheimen alleen vanaf main.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
     types: [opened, ready_for_review, reopened]
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
 
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-  actions: read
+# Geen rechten voor het workflowtoken. De bot gebruikt zijn eigen token met beperkte rechten.
+permissions: {}
 
 jobs:
   review:
     name: Review
     if: >-
-      github.event_name == 'pull_request'
+      github.event_name == 'pull_request_target'
       && !github.event.pull_request.draft
       && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+    environment:
+      name: bot
+      deployment: false
     concurrency:
       group: review-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -46,8 +57,10 @@ jobs:
           permission-issues: write
           permission-actions: read
 
+      # De actie haalt de branch van de pull request zelf op en heeft daarvoor de inloggegevens nodig.
+      # Deze workflow maakt geen artifacts, dus die gegevens kunnen nergens heen.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
+        with:  # zizmor: ignore[artipacked]
           fetch-depth: 0
           token: ${{ steps.bot.outputs.token }}
 
@@ -204,6 +217,11 @@ jobs:
         && startsWith(github.event.comment.body, '@oa-bot'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+    environment:
+      name: bot
+      deployment: false
     steps:
       - name: Token van Online Actief Bot
         id: bot
@@ -216,8 +234,10 @@ jobs:
           permission-issues: write
           permission-actions: read
 
+      # De actie haalt de branch van de pull request zelf op en heeft daarvoor de inloggegevens nodig.
+      # Deze workflow maakt geen artifacts, dus die gegevens kunnen nergens heen.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
+        with:  # zizmor: ignore[artipacked]
           fetch-depth: 0
           token: ${{ steps.bot.outputs.token }}
 

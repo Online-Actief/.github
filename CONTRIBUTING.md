@@ -70,6 +70,7 @@ Wachtwoorden, API-sleutels, tokens en certificaten komen nooit in git, ook niet 
 
 - Zet ze in `.env`. Dat bestand staat in `.gitignore`.
 - Zet de naam van elke variabele (zonder waarde) in `.env.example`.
+- De geheimen van Online Actief Bot staan per repo in de omgeving `bot`, die alleen vanaf `main` bruikbaar is. Een workflow in een eigen branch kan er niet bij.
 
 Staat er toch een geheim in een commit? Meld het meteen bij Vincent. Alleen verwijderen uit git is niet genoeg. Het geheim staat nog in de geschiedenis en misschien in kopieën, dus het moet vervangen worden.
 

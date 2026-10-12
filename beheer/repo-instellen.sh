@@ -55,6 +55,25 @@ for oud in accessibility bug documentation duplicate enhancement "good first iss
 done
 echo "labels: meldingen, prio, risico en categorie"
 
+# Omgeving "bot" met de geheimen van Online Actief Bot, alleen bruikbaar vanaf main.
+# Een workflow uit een andere branch kan er niet bij.
+GEHEIM=${OA_GEHEIMEN:-$HOME/oa-github/secrets}
+gh api -X PUT "repos/$ORG/$REPO/environments/bot" --input - --silent <<JSON
+{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+JSON
+if ! gh api "repos/$ORG/$REPO/environments/bot/deployment-branch-policies" --jq '.branch_policies[].name' | grep -qx main; then
+  gh api -X POST "repos/$ORG/$REPO/environments/bot/deployment-branch-policies" -f name=main -f type=branch --silent
+fi
+for paar in "CLAUDE_CODE_OAUTH_TOKEN:claude-token.txt" "OA_BOT_PRIVATE_KEY:oa-bot.pem" "RESEND_API_KEY:resend.txt"; do
+  naam=${paar%%:*}; bestand="$GEHEIM/${paar#*:}"
+  if [ -s "$bestand" ]; then
+    gh secret set "$naam" --env bot --repo "$ORG/$REPO" < "$bestand"
+  else
+    echo "LET OP: $bestand ontbreekt, $naam niet gezet"
+  fi
+done
+echo "omgeving bot: alleen main, geheimen gezet"
+
 # Toegang via teams.
 team() {
   gh api -X PUT "orgs/$ORG/teams/$1/repos/$ORG/$REPO" -f permission="$2" --silent
