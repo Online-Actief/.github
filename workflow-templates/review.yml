@@ -162,6 +162,7 @@ jobs:
               functie|fout|beveiliging|onderhoud|documentatie|tests) soort=$l ;;
             esac
           done
+          [ -n "$soort" ] || soort="?"
           case "$prio" in hoog) icoon="🔴" ;; middel) icoon="🟠" ;; laag) icoon="🟢" ;; *) icoon="⚪" ;; esac
           repo=${GITHUB_REPOSITORY#*/}
           onderwerp="[$icoon Prio ${prio:-?} | Risico ${risico:-?} | ${soort^}] $repo #$PR: $TITEL"
