@@ -1,0 +1,6 @@
+{
+  "name": "Claude-review",
+  "description": "Claude bekijkt elke pull request en zet opmerkingen bij de regels, ingedeeld naar prioriteit.",
+  "iconName": "octicon code-review",
+  "categories": ["Python", "JavaScript", "PHP"]
+}

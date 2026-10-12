@@ -1,6 +1,6 @@
 # Draait bij elke pull request en bij elke push naar de standaardbranch.
-# De namen van de jobs ("Geen geheimen" en "Tests") zijn de verplichte controles
-# in beheer/ruleset-main.json van Online-Actief/.github. Hernoem ze niet zonder dat bestand aan te passen.
+# De namen van de jobs zijn de verplichte controles in beheer/ruleset-main.json van
+# Online-Actief/.github. Hernoem ze niet zonder dat bestand aan te passen.
 name: Controles
 
 on:
@@ -92,3 +92,86 @@ jobs:
             composer install --no-interaction --no-progress
             if composer run-script --list | grep -qE '^\s*test\b'; then composer test; fi
           fi
+
+  kwaliteit:
+    name: Codekwaliteit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RUFF_VERSION: 0.17.0
+      HADOLINT_VERSION: 2.15.1
+      HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Python: echte fouten, zoals een naam die niet bestaat of een import die ontbreekt.
+      - if: ${{ !cancelled() && hashFiles('**/*.py') != '' }}
+        name: ruff
+        run: |
+          pipx run "ruff==${RUFF_VERSION}" check --output-format=github \
+            --select E9,F63,F7,F82,F821,F811,B006,B008,S102,S307 \
+            --extend-exclude .venv,venv,node_modules .
+
+      # Shell: scripts met .sh of een shebang naar bash of sh.
+      - if: ${{ !cancelled() }}
+        name: shellcheck
+        run: |
+          mapfile -t scripts < <(git ls-files | while read -r f; do
+            case "$f" in *.sh) echo "$f"; continue ;; esac
+            head -c 40 "$f" 2>/dev/null | grep -qE '^#!.*(ba)?sh' && echo "$f"
+          done)
+          if [ "${#scripts[@]}" -eq 0 ]; then echo "Geen shellscripts."; exit 0; fi
+          shellcheck --severity=warning --format=gcc "${scripts[@]}"
+
+      # Dockerfiles
+      - if: ${{ !cancelled() && hashFiles('**/Dockerfile', '**/*.Dockerfile') != '' }}
+        name: hadolint
+        run: |
+          curl -sSfL -o hadolint "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+          echo "${HADOLINT_SHA256}  hadolint" | sha256sum -c -
+          chmod +x hadolint
+          git ls-files '*Dockerfile' | xargs ./hadolint --failure-threshold error --format tty
+
+  beveiliging:
+    name: Beveiliging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OSV_VERSION: 2.7.0
+      OSV_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
+      SEMGREP_VERSION: 1.180.0
+      PIP_AUDIT_VERSION: 2.10.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Bekende lekken in Python-packages. pip-audit bepaalt de versies zoals pip ze bij een
+      # nieuwe build zou installeren, dus ook de packages waar je eigen packages van afhangen.
+      - if: ${{ !cancelled() && hashFiles('requirements.txt') != '' }}
+        name: pip-audit
+        run: pipx run "pip-audit==${PIP_AUDIT_VERSION}" -r requirements.txt --progress-spinner off
+
+      # Bekende lekken in lockfiles (package-lock.json, composer.lock enz.). requirements.txt
+      # doet hij niet: daar staan bereiken in plaats van echte versies, die controleert pip-audit.
+      - if: ${{ !cancelled() }}
+        name: osv-scanner
+        run: |
+          mapfile -t locks < <(git ls-files | grep -E '(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|composer\.lock|Pipfile\.lock|poetry\.lock|uv\.lock|Gemfile\.lock|go\.sum|Cargo\.lock)$' || true)
+          if [ "${#locks[@]}" -eq 0 ]; then echo "Geen lockfiles om te controleren."; exit 0; fi
+          curl -sSfL -o osv-scanner "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  osv-scanner" | sha256sum -c -
+          chmod +x osv-scanner
+          args=()
+          for f in "${locks[@]}"; do args+=(--lockfile "$f"); done
+          ./osv-scanner scan source --format table "${args[@]}"
+
+      # Onveilige patronen in de code, met de standaardregels van Semgrep. Alleen ernstige meldingen.
+      # De SQLAlchemy-regel staat uit: onze projecten gebruiken sqlite3 met ?-parameters, en die
+      # regel geeft daar valse meldingen. De andere SQL-regels blijven aan.
+      - if: ${{ !cancelled() }}
+        name: semgrep
+        run: |
+          pipx run "semgrep==${SEMGREP_VERSION}" scan --config p/default --severity ERROR             --exclude-rule python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query             --error --metrics off --quiet --exclude .venv --exclude venv --exclude node_modules .

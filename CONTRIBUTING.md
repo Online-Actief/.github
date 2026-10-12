@@ -86,8 +86,24 @@ Staat er toch een geheim in een commit? Meld het meteen bij Vincent. Alleen verw
 |---|---|
 | Geen geheimen | doorzoekt de hele geschiedenis met gitleaks |
 | Tests | draait de tests van het project (Node, Python of PHP) en controleert de syntax |
+| Codekwaliteit | ruff (Python), shellcheck (scripts) en hadolint (Dockerfile) zoeken echte fouten |
+| Beveiliging | pip-audit en osv-scanner zoeken packages met bekende lekken, semgrep zoekt onveilige code |
+| Claude-review | leest de wijziging en zet opmerkingen bij de regels, ingedeeld in Blokkerend, Belangrijk en Klein |
 
-Beide moeten groen zijn voordat iets naar `main` kan.
+Alle controles moeten groen zijn voordat iets naar `main` kan. De review van Claude is een hulp en vervangt de controle door een developer niet. Opnieuw laten kijken of iets vragen: begin een reactie in de pull request met `@claude`.
+
+Is een melding vals? Zet het niet zomaar uit, maar leg in de pull request uit waarom, dan beslist de reviewer.
+
+## Uitrollen
+
+Wat op `main` staat, gaat niet vanzelf live.
+
+1. Ga in de repo naar **Actions > Uitrollen > Run workflow**.
+2. De workflow controleert dat het `main` is, dat de controles groen zijn en dat jij mag uitrollen.
+3. De server haalt het verzoek binnen een minuut op, controleert het opnieuw en rolt uit.
+4. Werkt de nieuwe versie niet, dan zet de server automatisch de vorige terug.
+
+Wie mag uitrollen staat in de organisatievariabele `UITROLLERS`. Bij **Deployments** in de repo zie je wat er live staat, wie het uitrolde en wanneer.
 
 ## Review
 

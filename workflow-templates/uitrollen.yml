@@ -1,0 +1,108 @@
+# De knop "Uitrollen": Actions > Uitrollen > Run workflow.
+#
+# Deze workflow kan zelf niets op de server. Hij zet een uitrolverzoek klaar in GitHub
+# (een deployment naar "productie") en wacht op het antwoord van de server. Op de server
+# haalt oa-uitrol-agent elke minuut verzoeken op, controleert ze opnieuw en rolt uit.
+#
+# Alleen wie in de organisatievariabele UITROLLERS staat, mag uitrollen, en alleen vanaf main.
+name: Uitrollen
+
+on:
+  workflow_dispatch:
+    inputs:
+      versie:
+        description: Commit om uit te rollen. Leeg laten voor de nieuwste versie van main.
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  deployments: write
+  checks: read
+
+concurrency:
+  group: uitrollen
+  cancel-in-progress: false
+
+jobs:
+  uitrollen:
+    name: Uitrollen naar productie
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Mag dit?
+        env:
+          WIE: ${{ github.triggering_actor }}
+          UITROLLERS: ${{ vars.UITROLLERS }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Uitrollen kan alleen vanaf main, niet vanaf $GITHUB_REF."
+            exit 1
+          fi
+          if ! printf '%s\n' $UITROLLERS | grep -qx "$WIE"; then
+            echo "::error::$WIE mag niet uitrollen. Vraag het aan iemand die dat wel mag."
+            exit 1
+          fi
+          echo "$WIE mag uitrollen."
+
+      - name: Welke versie, en zijn de controles groen?
+        id: versie
+        env:
+          GEVRAAGD: ${{ inputs.versie }}
+        run: |
+          sha=${GEVRAAGD:-$GITHUB_SHA}
+          sha=$(gh api "repos/$REPO/commits/$sha" --jq .sha) || { echo "::error::Commit $GEVRAAGD bestaat niet."; exit 1; }
+
+          # De versie moet op main staan, dus via een pull request zijn samengevoegd.
+          stand=$(gh api "repos/$REPO/compare/$sha...main" --jq .status)
+          if [ "$stand" != "ahead" ] && [ "$stand" != "identical" ]; then
+            echo "::error::${sha:0:7} staat niet op main."
+            exit 1
+          fi
+
+          for controle in "Geen geheimen" "Tests"; do
+            uitkomst=$(gh api "repos/$REPO/commits/$sha/check-runs" \
+              --jq "[.check_runs[] | select(.name == \"$controle\")][0].conclusion")
+            if [ "$uitkomst" != "success" ]; then
+              echo "::error::Controle \"$controle\" is niet groen voor ${sha:0:7} (${uitkomst:-niet gedraaid})."
+              exit 1
+            fi
+            echo "ok  $controle"
+          done
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Uitrollen: ${sha:0:7} $(gh api "repos/$REPO/commits/$sha" --jq '.commit.message | split("\n")[0]')"
+
+      - name: Uitrolverzoek klaarzetten
+        id: verzoek
+        env:
+          SHA: ${{ steps.versie.outputs.sha }}
+        run: |
+          id=$(jq -n --arg sha "$SHA" --argjson run "$GITHUB_RUN_ID" \
+            '{ref: $sha, environment: "productie", auto_merge: false, required_contexts: [],
+              description: "Uitrollen via de knop", payload: {run_id: $run}}' \
+            | gh api -X POST "repos/$REPO/deployments" --input - --jq .id)
+          gh api -X POST "repos/$REPO/deployments/$id/statuses" \
+            -f state=queued -f description="Wacht op de server" \
+            -f log_url="$GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID" --silent
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "Uitrolverzoek $id staat klaar. De server pakt het binnen een minuut op."
+
+      - name: Wachten op de server
+        env:
+          ID: ${{ steps.verzoek.outputs.id }}
+        run: |
+          for i in $(seq 1 60); do
+            read -r staat uitleg < <(gh api "repos/$REPO/deployments/$ID/statuses" \
+              --jq '.[0] | "\(.state) \(.description)"')
+            case "$staat" in
+              success) echo "Live: $uitleg"; exit 0 ;;
+              failure|error|inactive) echo "::error::$uitleg"; exit 1 ;;
+            esac
+            echo "$(date +%T) $staat: $uitleg"
+            sleep 10
+          done
+          echo "::error::De server heeft na 10 minuten niet gereageerd. Kijk op de server in /var/log/oa-deploy.log."
+          exit 1

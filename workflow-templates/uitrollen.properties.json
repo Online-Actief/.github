@@ -1,0 +1,6 @@
+{
+  "name": "Uitrollen",
+  "description": "Knop om main uit te rollen naar de server. De server haalt het verzoek zelf op.",
+  "iconName": "octicon rocket",
+  "categories": ["Deployment"]
+}
