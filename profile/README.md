@@ -14,34 +14,6 @@ Online marketingbureau uit Oldenzaal. Marketeers, designers en developers onder 
 
 <br>
 
-## Wat we doen
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**Marketing**
-
-- Zoekmachinemarketing (SEO en Google Ads)
-- Social media marketing
-- Contentmarketing
-- E-mailmarketing
-- AI-optimalisatie
-
-</td>
-<td width="50%" valign="top">
-
-**Development**
-
-- Websites en webshops met eigen thema's en plugins
-- Webapps, dashboards en interne tools
-- Koppelingen met Google Ads, Merchant Center, Analytics, Tag Manager en Meta
-- MCP-servers waarmee AI-assistenten met die systemen kunnen werken
-
-</td>
-</tr>
-</table>
-
 ## Waarmee we bouwen
 
 <table>
@@ -49,15 +21,6 @@ Online marketingbureau uit Oldenzaal. Marketeers, designers en developers onder 
 <tr><td><b>Apps en koppelingen</b></td><td><img src="https://skillicons.dev/icons?i=laravel,react,vite,python,fastapi,nodejs" alt="laravel, react, vite, python, fastapi, nodejs"></td></tr>
 <tr><td><b>Data en servers</b></td><td><img src="https://skillicons.dev/icons?i=mysql,sqlite,docker,ubuntu,nginx,git,githubactions" alt="mysql, sqlite, docker, ubuntu, nginx, git, githubactions"></td></tr>
 </table>
-
-## Hoe we werken
-
-- Elke wijziging gaat via een **pull request** en wordt bekeken door een developer.
-- Bij elke pull request draaien automatisch de **tests** en een **controle op geheimen**.
-- Wachtwoorden en sleutels horen niet in de code. Een controle vóór elke commit houdt ze tegen.
-- De meeste repo's zijn **privé**, omdat ze over klanten gaan.
-
-Meer in de [werkwijze](https://github.com/Online-Actief/.github/blob/main/CONTRIBUTING.md).
 
 ## Contact
 
