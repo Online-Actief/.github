@@ -70,7 +70,8 @@ jobs:
             exit 1
           fi
           # Een lege naam mag nooit, ook niet als UITROLLERS leeg is.
-          mag() { [ -n "$1" ] && printf '%s\n' $UITROLLERS | grep -qxF -- "$1"; }
+          # Namen gescheiden door spaties; set -f voorkomt dat de shell * of ? als bestandsnaam leest.
+          mag() { [ -n "$1" ] && (set -f; printf '%s\n' $UITROLLERS) | grep -qxF -- "$1"; }
 
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
             if ! mag "$WIE"; then
@@ -189,7 +190,10 @@ jobs:
           ID: ${{ steps.verzoek.outputs.id }}
         run: |
           for i in $(seq 1 60); do
-            read -r staat uitleg < <(gh api "repos/$REPO/deployments/$ID/statuses" --jq '.[0] | "\(.state) \(.description)"')
+            # Lukt de vraag een keer niet (netwerk, limiet), dan gewoon opnieuw proberen.
+            regel=$(gh api "repos/$REPO/deployments/$ID/statuses" --jq '.[0] | "\(.state) \(.description)"' 2>/dev/null) \
+              || regel="onbekend GitHub gaf geen antwoord, opnieuw proberen"
+            read -r staat uitleg <<< "$regel"
             case "$staat" in
               success) echo "uitleg=$uitleg" >> "$GITHUB_OUTPUT"; echo "✅ $uitleg"; exit 0 ;;
               failure|error|inactive) echo "uitleg=$uitleg" >> "$GITHUB_OUTPUT"; echo "::error::❌ $uitleg"; exit 1 ;;
