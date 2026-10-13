@@ -76,8 +76,7 @@ jobs:
               echo "::error::$WIE mag niet uitrollen. Vraag het aan iemand die dat wel mag."
               exit 1
             fi
-            pr=$(gh api "repos/$REPO/commits/$GITHUB_SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].number // ""')
-            { echo "door=$WIE"; echo "pr=$pr"; echo "doorgaan=ja"; } >> "$GITHUB_OUTPUT"
+            { echo "door=$WIE"; echo "doorgaan=ja"; } >> "$GITHUB_OUTPUT"
             echo "$WIE mag uitrollen."
             exit 0
           fi
@@ -97,8 +96,14 @@ jobs:
           fi
           door=$(gh api "repos/$REPO/pulls/$pr" --jq '.merged_by.login // ""')
           if ! mag "$door"; then
+            # Alleen een goedkeuring op de laatste commit telt, en alleen als het iemands laatste
+            # oordeel is. Na een nieuwe push of "changes requested" telt een oude goedkeuring niet.
             door=""
-            for naam in $(gh api "repos/$REPO/pulls/$pr/reviews?per_page=100" --jq '.[] | select(.state == "APPROVED") | .user.login'); do
+            kop=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
+            for naam in $(gh api "repos/$REPO/pulls/$pr/reviews?per_page=100" --jq "
+                [.[] | select(.state == \"APPROVED\" or .state == \"CHANGES_REQUESTED\" or .state == \"DISMISSED\")]
+                | group_by(.user.login) | map(last)
+                | .[] | select(.state == \"APPROVED\" and .commit_id == \"$kop\") | .user.login"); do
               if mag "$naam"; then door=$naam; break; fi
             done
           fi
@@ -137,6 +142,11 @@ jobs:
             echo "ok  $controle"
           done
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          # Met de knop: de pull request van de gekozen versie, voor de melding.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            pr=$(gh api "repos/$REPO/commits/$sha/pulls"               --jq "[.[] | select(.merge_commit_sha == \"$sha\" and .merged_at != null)][0].number // \"\"")
+            echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          fi
           echo "Uitrollen: ${sha:0:7} $(gh api "repos/$REPO/commits/$sha" --jq '.commit.message | split("\n")[0]')"
 
       - name: Uitrolverzoek klaarzetten
@@ -144,7 +154,7 @@ jobs:
         if: steps.mag.outputs.doorgaan == 'ja'
         env:
           SHA: ${{ steps.versie.outputs.sha }}
-          PR: ${{ steps.mag.outputs.pr }}
+          PR: ${{ steps.mag.outputs.pr || steps.versie.outputs.pr }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then hoe="Uitrollen via de knop"; else hoe="Automatisch na merge van #$PR"; fi
           id=$(jq -n --arg sha "$SHA" --argjson run "$GITHUB_RUN_ID" --arg hoe "$hoe" \
@@ -206,7 +216,7 @@ jobs:
       # Vanaf hier alleen melden: een fout hierin verandert niets aan wat er live staat.
       - name: Token van Online Actief Bot
         id: bot
-        if: ${{ always() && steps.mag.outputs.pr != '' }}
+        if: ${{ always() && (steps.mag.outputs.pr != '' || steps.versie.outputs.pr != '') }}
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -220,7 +230,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          PR: ${{ steps.mag.outputs.pr }}
+          PR: ${{ steps.mag.outputs.pr || steps.versie.outputs.pr }}
           SHA: ${{ steps.versie.outputs.sha }}
           UITLEG: ${{ steps.server.outputs.uitleg }}
           UITKOMST: ${{ steps.server.outcome }}
@@ -231,10 +241,11 @@ jobs:
             failure) kop="❌ Uitrollen niet gelukt, de vorige versie staat nog live" ;;
             *)       kop="⛔ Niet uitgerold" ;;
           esac
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then wie="uitgerold door"; else wie="goedgekeurd door"; fi
           {
             echo "### $kop"
             echo
-            [ -n "$SHA" ] && echo "Versie [\`${SHA:0:7}\`]($GITHUB_SERVER_URL/$REPO/commit/$SHA)${WIE:+, goedgekeurd door $WIE}."
+            [ -n "$SHA" ] && echo "Versie [\`${SHA:0:7}\`]($GITHUB_SERVER_URL/$REPO/commit/$SHA)${WIE:+, $wie $WIE}."
             [ -n "$UITLEG" ] && echo "Server: $UITLEG"
             echo
             echo "[Bekijk de uitrol]($GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID)"
@@ -246,7 +257,7 @@ jobs:
         env:
           NAAR: ${{ vars.REVIEW_MAIL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          PR: ${{ steps.mag.outputs.pr }}
+          PR: ${{ steps.mag.outputs.pr || steps.versie.outputs.pr }}
           SHA: ${{ steps.versie.outputs.sha }}
           UITLEG: ${{ steps.server.outputs.uitleg }}
         run: |
