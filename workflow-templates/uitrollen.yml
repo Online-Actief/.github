@@ -133,15 +133,29 @@ jobs:
             exit 1
           fi
 
-          for controle in "Geen geheimen" "Tests"; do
-            uitkomst=$(gh api "repos/$REPO/commits/$sha/check-runs" \
-              --jq "[.check_runs[] | select(.name == \"$controle\")][0].conclusion")
-            if [ "$uitkomst" != "success" ]; then
-              echo "::error::Controle \"$controle\" is niet groen voor ${sha:0:7} (${uitkomst:-niet gedraaid})."
+          # Alle verplichte controles, en per controle de laatste run (een controle kan opnieuw gedraaid zijn).
+          rood=""
+          for controle in "Geen geheimen" "Tests" "Codekwaliteit" "Beveiliging"; do
+            uitkomst=$(gh api "repos/$REPO/commits/$sha/check-runs?per_page=100" \
+              --jq "[.check_runs[] | select(.name == \"$controle\")] | sort_by(.completed_at // \"\") | last | .conclusion // \"\"")
+            if [ "$uitkomst" = "success" ]; then
+              echo "ok  $controle"
+            else
+              rood="$rood $controle (${uitkomst:-niet gedraaid});"
+            fi
+          done
+          if [ -n "$rood" ]; then
+            # Terugzetten met de knop naar een versie die al eens goed live stond, mag ook als GitHub
+            # de oude controles inmiddels heeft opgeruimd. Een nieuwe versie moet altijd groen zijn.
+            eerder=$(gh api "repos/$REPO/deployments?sha=$sha&environment=productie&per_page=20" --jq '.[].id' \
+              | while read -r d; do gh api "repos/$REPO/deployments/$d/statuses" --jq '.[] | select(.state == "success") | .id'; done | head -1)
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ -n "$eerder" ]; then
+              echo "::notice::Controles niet (meer) groen:$rood maar ${sha:0:7} stond eerder met succes live. Terugzetten mag."
+            else
+              echo "::error::Niet alle controles zijn groen voor ${sha:0:7}:$rood"
               exit 1
             fi
-            echo "ok  $controle"
-          done
+          fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           # Met de knop: de pull request van de gekozen versie, voor de melding.
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
