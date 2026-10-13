@@ -69,7 +69,8 @@ jobs:
             echo "::error::Uitrollen kan alleen vanaf main, niet vanaf $GITHUB_REF."
             exit 1
           fi
-          mag() { printf '%s\n' $UITROLLERS | grep -qx "$1"; }
+          # Een lege naam mag nooit, ook niet als UITROLLERS leeg is.
+          mag() { [ -n "$1" ] && printf '%s\n' $UITROLLERS | grep -qxF -- "$1"; }
 
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
             if ! mag "$WIE"; then
