@@ -71,7 +71,8 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f pyproject.toml ] && grep -q '^\[build-system\]' pyproject.toml; then pip install -e .; fi
           if [ -d tests ]; then
-            pip install pytest
+            # Pakketten die alleen voor de tests nodig zijn, zoals httpx voor de testclient van FastAPI.
+            if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; else pip install pytest; fi
             python -m pytest
           else
             echo "Geen map tests/, alleen controleren of alle Python-bestanden compileren."
