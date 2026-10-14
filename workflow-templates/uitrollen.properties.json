@@ -1,6 +1,6 @@
 {
   "name": "Uitrollen",
-  "description": "Knop om main uit te rollen naar de server. De server haalt het verzoek zelf op.",
+  "description": "Rolt main automatisch uit na een merge, plus een knop voor opnieuw uitrollen. De server haalt het verzoek zelf op.",
   "iconName": "octicon rocket",
   "categories": ["Deployment"]
 }

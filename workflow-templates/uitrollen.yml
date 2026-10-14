@@ -1,13 +1,27 @@
-# De knop "Uitrollen": Actions > Uitrollen > Run workflow.
+# Uitrollen naar productie.
+#
+# Automatisch: na elke merge naar main, zodra de Controles op main groen zijn. Uitzetten kan met
+# de organisatie- of repovariabele AUTO_UITROLLEN=uit.
+# Met de knop: Actions > Uitrollen > Run workflow, om opnieuw uit te rollen of een oudere versie
+# terug te zetten.
 #
 # Deze workflow kan zelf niets op de server. Hij zet een uitrolverzoek klaar in GitHub
 # (een deployment naar "productie") en wacht op het antwoord van de server. Op de server
 # haalt oa-uitrol-agent elke minuut verzoeken op, controleert ze opnieuw en rolt uit.
 #
-# Alleen wie in de organisatievariabele UITROLLERS staat, mag uitrollen, en alleen vanaf main.
+# Alleen main gaat live. Met de knop mag alleen wie in de organisatievariabele UITROLLERS staat.
+# Automatisch alleen als de pull request is samengevoegd of goedgekeurd door iemand uit UITROLLERS.
+#
+# Na afloop zet Online Actief Bot de uitkomst in de pull request. Gaat het mis, dan krijgt
+# REVIEW_MAIL een mail. Nodig in de omgeving "bot": OA_BOT_PRIVATE_KEY en RESEND_API_KEY.
 name: Uitrollen
 
-on:
+# zizmor: workflow_run is bewust: draait alleen na een push naar main in deze repo en voert geen code uit.
+on: # zizmor: ignore[dangerous-triggers]
+  workflow_run:
+    workflows: [Controles]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       versie:
@@ -19,6 +33,7 @@ permissions:
   contents: read
   deployments: write
   checks: read
+  pull-requests: read
 
 concurrency:
   group: uitrollen
@@ -27,33 +42,89 @@ concurrency:
 jobs:
   uitrollen:
     name: Uitrollen naar productie
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push'
+        && github.event.workflow_run.head_branch == 'main'
+        && github.event.workflow_run.head_repository.full_name == github.repository
+        && vars.AUTO_UITROLLEN != 'uit')
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment:
+      name: bot
+      deployment: false
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
     steps:
       - name: Mag dit?
+        id: mag
         env:
           WIE: ${{ github.triggering_actor }}
           UITROLLERS: ${{ vars.UITROLLERS }}
+          AUTO_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "::error::Uitrollen kan alleen vanaf main, niet vanaf $GITHUB_REF."
             exit 1
           fi
-          if ! printf '%s\n' $UITROLLERS | grep -qx "$WIE"; then
-            echo "::error::$WIE mag niet uitrollen. Vraag het aan iemand die dat wel mag."
+          # Een lege naam mag nooit, ook niet als UITROLLERS leeg is.
+          # Namen gescheiden door spaties; set -f voorkomt dat de shell * of ? als bestandsnaam leest.
+          mag() { [ -n "$1" ] && (set -f; printf '%s\n' $UITROLLERS) | grep -qxF -- "$1"; }
+
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if ! mag "$WIE"; then
+              echo "::error::$WIE mag niet uitrollen. Vraag het aan iemand die dat wel mag."
+              exit 1
+            fi
+            { echo "door=$WIE"; echo "doorgaan=ja"; } >> "$GITHUB_OUTPUT"
+            echo "$WIE mag uitrollen."
+            exit 0
+          fi
+
+          # Automatisch: alleen de nieuwste commit van main. Bij twee snelle merges rolt de tweede uit.
+          nieuwste=$(gh api "repos/$REPO/commits/main" --jq .sha)
+          if [ "$AUTO_SHA" != "$nieuwste" ]; then
+            echo "${AUTO_SHA:0:7} is niet meer de nieuwste versie van main, de volgende uitrol neemt het mee."
+            echo "doorgaan=nee" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          pr=$(gh api "repos/$REPO/commits/$AUTO_SHA/pulls" \
+            --jq "[.[] | select(.merge_commit_sha == \"$AUTO_SHA\" and .base.ref == \"main\" and .merged_at != null)][0].number // \"\"")
+          if [ -z "$pr" ]; then
+            echo "::error::${AUTO_SHA:0:7} is niet via een pull request op main gekomen, dus niet automatisch uitgerold."
             exit 1
           fi
-          echo "$WIE mag uitrollen."
+          door=$(gh api "repos/$REPO/pulls/$pr" --jq '.merged_by.login // ""')
+          if ! mag "$door"; then
+            # Alleen een goedkeuring op de laatste commit telt, en alleen als het iemands laatste
+            # oordeel is. Na een nieuwe push of "changes requested" telt een oude goedkeuring niet.
+            door=""
+            kop=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
+            for naam in $(gh api "repos/$REPO/pulls/$pr/reviews?per_page=100" --jq "
+                [.[] | select(.state == \"APPROVED\" or .state == \"CHANGES_REQUESTED\" or .state == \"DISMISSED\")]
+                | group_by(.user.login) | map(last)
+                | .[] | select(.state == \"APPROVED\" and .commit_id == \"$kop\") | .user.login"); do
+              if mag "$naam"; then door=$naam; break; fi
+            done
+          fi
+          if [ -z "$door" ]; then
+            echo "::error::Pull request #$pr is niet samengevoegd of goedgekeurd door iemand die mag uitrollen."
+            echo "pr=$pr" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          { echo "door=$door"; echo "pr=$pr"; echo "doorgaan=ja"; } >> "$GITHUB_OUTPUT"
+          echo "Pull request #$pr, goedgekeurd door $door. Automatisch uitrollen."
 
       - name: Welke versie, en zijn de controles groen?
         id: versie
+        if: steps.mag.outputs.doorgaan == 'ja'
         env:
           GEVRAAGD: ${{ inputs.versie }}
+          AUTO_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          sha=${GEVRAAGD:-$GITHUB_SHA}
+          sha=${GEVRAAGD:-${AUTO_SHA:-$GITHUB_SHA}}
           sha=$(gh api "repos/$REPO/commits/$sha" --jq .sha) || { echo "::error::Commit $GEVRAAGD bestaat niet."; exit 1; }
 
           # De versie moet op main staan, dus via een pull request zijn samengevoegd.
@@ -63,26 +134,48 @@ jobs:
             exit 1
           fi
 
-          for controle in "Geen geheimen" "Tests"; do
-            uitkomst=$(gh api "repos/$REPO/commits/$sha/check-runs" \
-              --jq "[.check_runs[] | select(.name == \"$controle\")][0].conclusion")
-            if [ "$uitkomst" != "success" ]; then
-              echo "::error::Controle \"$controle\" is niet groen voor ${sha:0:7} (${uitkomst:-niet gedraaid})."
+          # Alle verplichte controles, en per controle de laatste run (een controle kan opnieuw gedraaid zijn).
+          rood=""
+          for controle in "Geen geheimen" "Tests" "Codekwaliteit" "Beveiliging"; do
+            uitkomst=$(gh api "repos/$REPO/commits/$sha/check-runs?per_page=100" \
+              --jq "[.check_runs[] | select(.name == \"$controle\")] | sort_by(.completed_at // \"\") | last | .conclusion // \"\"")
+            if [ "$uitkomst" = "success" ]; then
+              echo "ok  $controle"
+            else
+              rood="$rood $controle (${uitkomst:-niet gedraaid});"
+            fi
+          done
+          if [ -n "$rood" ]; then
+            # Terugzetten met de knop naar een versie die al eens goed live stond, mag ook als GitHub
+            # de oude controles inmiddels heeft opgeruimd. Een nieuwe versie moet altijd groen zijn.
+            eerder=$(gh api "repos/$REPO/deployments?sha=$sha&environment=productie&per_page=20" --jq '.[].id' \
+              | while read -r d; do gh api "repos/$REPO/deployments/$d/statuses" --jq '.[] | select(.state == "success") | .id'; done | head -1)
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ -n "$eerder" ]; then
+              echo "::notice::Controles niet (meer) groen:$rood maar ${sha:0:7} stond eerder met succes live. Terugzetten mag."
+            else
+              echo "::error::Niet alle controles zijn groen voor ${sha:0:7}:$rood"
               exit 1
             fi
-            echo "ok  $controle"
-          done
+          fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          # Met de knop: de pull request van de gekozen versie, voor de melding.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            pr=$(gh api "repos/$REPO/commits/$sha/pulls"               --jq "[.[] | select(.merge_commit_sha == \"$sha\" and .merged_at != null)][0].number // \"\"")
+            echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          fi
           echo "Uitrollen: ${sha:0:7} $(gh api "repos/$REPO/commits/$sha" --jq '.commit.message | split("\n")[0]')"
 
       - name: Uitrolverzoek klaarzetten
         id: verzoek
+        if: steps.mag.outputs.doorgaan == 'ja'
         env:
           SHA: ${{ steps.versie.outputs.sha }}
+          PR: ${{ steps.mag.outputs.pr || steps.versie.outputs.pr }}
         run: |
-          id=$(jq -n --arg sha "$SHA" --argjson run "$GITHUB_RUN_ID" \
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then hoe="Uitrollen via de knop"; else hoe="Automatisch na merge van #$PR"; fi
+          id=$(jq -n --arg sha "$SHA" --argjson run "$GITHUB_RUN_ID" --arg hoe "$hoe" \
             '{ref: $sha, environment: "productie", auto_merge: false, required_contexts: [],
-              description: "Uitrollen via de knop", payload: {run_id: $run}}' \
+              description: $hoe, payload: {run_id: $run}}' \
             | gh api -X POST "repos/$REPO/deployments" --input - --jq .id)
           gh api -X POST "repos/$REPO/deployments/$id/statuses" \
             -f state=queued -f description="Wacht op de server" \
@@ -92,11 +185,15 @@ jobs:
 
       - name: Wachten op de server
         id: server
+        if: steps.mag.outputs.doorgaan == 'ja'
         env:
           ID: ${{ steps.verzoek.outputs.id }}
         run: |
           for i in $(seq 1 60); do
-            read -r staat uitleg < <(gh api "repos/$REPO/deployments/$ID/statuses"               --jq '.[0] | "\(.state) \(.description)"')
+            # Lukt de vraag een keer niet (netwerk, limiet), dan gewoon opnieuw proberen.
+            regel=$(gh api "repos/$REPO/deployments/$ID/statuses" --jq '.[0] | "\(.state) \(.description)"' 2>/dev/null) \
+              || regel="onbekend GitHub gaf geen antwoord, opnieuw proberen"
+            read -r staat uitleg <<< "$regel"
             case "$staat" in
               success) echo "uitleg=$uitleg" >> "$GITHUB_OUTPUT"; echo "✅ $uitleg"; exit 0 ;;
               failure|error|inactive) echo "uitleg=$uitleg" >> "$GITHUB_OUTPUT"; echo "::error::❌ $uitleg"; exit 1 ;;
@@ -109,12 +206,12 @@ jobs:
           exit 1
 
       - name: Samenvatting
-        if: ${{ always() }}
+        if: ${{ always() && steps.mag.outputs.doorgaan != 'nee' }}
         env:
           SHA: ${{ steps.versie.outputs.sha }}
           UITLEG: ${{ steps.server.outputs.uitleg }}
           UITKOMST: ${{ steps.server.outcome }}
-          WIE: ${{ github.triggering_actor }}
+          WIE: ${{ steps.mag.outputs.door || github.triggering_actor }}
         run: |
           case "$UITKOMST" in
             success) icoon="✅"; tekst="Live" ;;
@@ -134,3 +231,66 @@ jobs:
             echo
             echo "<sub>De server zet bij een fout automatisch de vorige versie terug. Overzicht: Deployments in deze repo.</sub>"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Vanaf hier alleen melden: een fout hierin verandert niets aan wat er live staat.
+      - name: Token van Online Actief Bot
+        id: bot
+        if: ${{ always() && (steps.mag.outputs.pr != '' || steps.versie.outputs.pr != '') }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.OA_BOT_APP_ID }}
+          private-key: ${{ secrets.OA_BOT_PRIVATE_KEY }}
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Uitkomst in de pull request
+        if: ${{ always() && steps.bot.outputs.token != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          PR: ${{ steps.mag.outputs.pr || steps.versie.outputs.pr }}
+          SHA: ${{ steps.versie.outputs.sha }}
+          UITLEG: ${{ steps.server.outputs.uitleg }}
+          UITKOMST: ${{ steps.server.outcome }}
+          WIE: ${{ steps.mag.outputs.door }}
+        run: |
+          case "$UITKOMST" in
+            success) kop="🚀 Uitgerold naar productie" ;;
+            failure) kop="❌ Uitrollen niet gelukt, de vorige versie staat nog live" ;;
+            *)       kop="⛔ Niet uitgerold" ;;
+          esac
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then wie="uitgerold door"; else wie="goedgekeurd door"; fi
+          {
+            echo "### $kop"
+            echo
+            [ -n "$SHA" ] && echo "Versie [\`${SHA:0:7}\`]($GITHUB_SERVER_URL/$REPO/commit/$SHA)${WIE:+, $wie $WIE}."
+            [ -n "$UITLEG" ] && echo "Server: $UITLEG"
+            echo
+            echo "[Bekijk de uitrol]($GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID)"
+          } > bericht.md
+          gh pr comment "$PR" -R "$REPO" --body-file bericht.md
+
+      - name: Mail bij een fout
+        if: ${{ failure() && vars.REVIEW_MAIL != '' }}
+        env:
+          NAAR: ${{ vars.REVIEW_MAIL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PR: ${{ steps.mag.outputs.pr || steps.versie.outputs.pr }}
+          SHA: ${{ steps.versie.outputs.sha }}
+          UITLEG: ${{ steps.server.outputs.uitleg }}
+        run: |
+          if [ -z "$RESEND_API_KEY" ]; then echo "Geen RESEND_API_KEY, dus geen mail."; exit 0; fi
+          project=${REPO#*/}
+          tekst="Uitrollen van $project${SHA:+ (versie ${SHA:0:7})}${PR:+ na pull request #$PR} is niet gelukt."
+          [ -n "$UITLEG" ] && tekst+=$'\n'"Server: $UITLEG"
+          tekst+=$'\n\n'"Bij een fout op de server staat de vorige versie nog live."
+          tekst+=$'\n'"Bekijk de uitrol: $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID"
+          jq -n --arg van "Online Actief Bot <notificaties@mail.online-actief.nl>" --arg naar "$NAAR" \
+            --arg onderwerp "[🔴 Uitrol mislukt] $project${PR:+ #$PR}" --arg tekst "$tekst" \
+            '{from: $van, to: [$naar], subject: $onderwerp, text: $tekst}' > mail.json
+          code=$(curl -s -o antwoord.json -w '%{http_code}' https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" --data @mail.json)
+          rm -f mail.json
+          if [ "$code" -ge 300 ]; then echo "::warning::Mail niet verstuurd (HTTP $code)"; cat antwoord.json; exit 0; fi
+          echo "Mail verstuurd naar $NAAR."

@@ -97,12 +97,14 @@ Is een melding vals? Zet het niet zomaar uit, maar leg in de pull request uit wa
 
 ## Uitrollen
 
-Wat op `main` staat, gaat niet vanzelf live.
+Een merge naar `main` gaat automatisch live.
 
-1. Ga in de repo naar **Actions > Uitrollen > Run workflow**.
-2. De workflow controleert dat het `main` is, dat de controles groen zijn en dat jij mag uitrollen.
-3. De server haalt het verzoek binnen een minuut op, controleert het opnieuw en rolt uit.
-4. Werkt de nieuwe versie niet, dan zet de server automatisch de vorige terug.
+1. Zodra de controles op `main` groen zijn, maakt de workflow Uitrollen een uitrolverzoek. Dat gebeurt alleen als de pull request is samengevoegd of goedgekeurd door iemand uit `UITROLLERS`.
+2. De server haalt het verzoek binnen een minuut op, controleert het opnieuw en rolt uit.
+3. Werkt de nieuwe versie niet, dan zet de server automatisch de vorige terug.
+4. Online Actief Bot zet de uitkomst in de pull request. Bij een fout gaat er een mail naar de reviewer.
+
+Opnieuw uitrollen of een oudere versie terugzetten doe je met **Actions > Uitrollen > Run workflow**. Automatisch uitrollen tijdelijk uitzetten kan met de variabele `AUTO_UITROLLEN=uit`.
 
 Wie mag uitrollen staat in de organisatievariabele `UITROLLERS`. Bij **Deployments** in de repo zie je wat er live staat, wie het uitrolde en wanneer.
 
